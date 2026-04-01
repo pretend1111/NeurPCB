@@ -1,7 +1,7 @@
 # NeurPCB 开发任务清单
 
 > 最后更新: 2026-04-01
-> 当前阶段: Phase 3 — Agent 框架 + Analyzer
+> 当前阶段: Phase 4 — Module Placer
 
 ---
 
@@ -68,10 +68,10 @@
 
 | # | 任务 | 状态 | 备注 |
 |---|------|------|------|
-| 4.1 | Module Placer 工具集注册（原子操作 + Skills） | ⬚ 待做 | |
-| 4.2 | observe_module_layout / observe_violations 实现 | ⬚ 待做 | |
-| 4.3 | Module Placer Agent + system prompt | ⬚ 待做 | |
-| 4.4 | 在 LDO 模块上测试通过 | ⬚ 待做 | |
+| 4.1 | Module Placer 工具集注册（原子操作 + Skills） | ✅ 完成 | 7 个工具：observe/move/rotate/swap/apply_skill/finish |
+| 4.2 | observe_module_layout / observe_violations 实现 | ✅ 完成 | 布局状态观测 + 重叠/间距违规检测 |
+| 4.3 | Module Placer Agent + system prompt | ✅ 完成 | tool-calling 循环，自动选择 skill 或原子操作 |
+| 4.4 | 在 LDO 模块上测试通过 | ✅ 完成 | DeepSeek 实测: 5/5 器件布局，16x18mm bbox |
 
 ### Phase 5: Global Placer + 地图系统
 | # | 任务 | 状态 | 备注 |
@@ -111,6 +111,7 @@
 | 2026-04-01 | Phase 1 完成：geometry 层 4 个模块（core/ratsnest/congestion/channel），40 个测试全部通过 |
 | 2026-04-01 | Phase 2 完成：6 个 Skills（decap/ldo/crystal/force_directed/led/divider），17 个测试通过 |
 | 2026-04-01 | Phase 3 完成：LLM Client + BaseAgent + Louvain 聚类 + Analyzer Agent，ESP32 实测成功 |
+| 2026-04-01 | Phase 4 完成：Module Placer Agent + 7 个 tool-calling 工具，LDO 模块 DeepSeek 实测通过 |
 
 ---
 

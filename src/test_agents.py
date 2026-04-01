@@ -84,7 +84,7 @@ class TestNetlistGraph(unittest.TestCase):
 # ===================================================================
 
 class TestBaseAgent(unittest.TestCase):
-    @patch("agents.llm_client.query_llm_json")
+    @patch("agents.base_agent.query_llm_json")
     def test_run_json(self, mock_query):
         from agents.base_agent import BaseAgent
         mock_query.return_value = {"result": "ok"}
