@@ -71,6 +71,38 @@ def _observe_module_layout(state: ModulePlacerState) -> dict:
     }
 
 
+def _observe_ratsnest(state: ModulePlacerState) -> dict:
+    """显示模块内所有电气连接（飞线），及已放置器件间的飞线长度"""
+    nets = []
+    for conn in state.connections:
+        pa = state.placements.get(conn.ref_a)
+        pb = state.placements.get(conn.ref_b)
+        entry = {
+            "net": f"{conn.ref_a}↔{conn.ref_b}",
+            "weight": conn.weight,
+        }
+        if pa and pb:
+            dist = math.hypot(pa.x_mm - pb.x_mm, pa.y_mm - pb.y_mm)
+            entry["distance_mm"] = round(dist, 2)
+            entry["status"] = "long" if dist > 5.0 else "ok"
+        else:
+            entry["status"] = "unplaced"
+        nets.append(entry)
+
+    # 按距离排序，最长的飞线排前面（最需要优化的）
+    nets.sort(key=lambda n: -n.get("distance_mm", 999))
+
+    total_length = sum(n.get("distance_mm", 0) for n in nets)
+    long_count = sum(1 for n in nets if n.get("status") == "long")
+
+    return {
+        "connections": nets,
+        "total_length_mm": round(total_length, 1),
+        "long_connections": long_count,
+        "total_connections": len(nets),
+    }
+
+
 def _observe_violations(state: ModulePlacerState) -> dict:
     """检查重叠和间距违规"""
     violations = []
@@ -243,6 +275,10 @@ _TOOLS_SCHEMA = {
         "desc": "View current placement state of all components in this module",
         "params": {"type": "object", "properties": {}, "required": []},
     },
+    "observe_ratsnest": {
+        "desc": "Show all electrical connections (ratsnest/flylines) between components. Shows which components need to be close and current distances. Long connections (>5mm) should be shortened by moving components closer.",
+        "params": {"type": "object", "properties": {}, "required": []},
+    },
     "observe_violations": {
         "desc": "Check for overlaps and spacing violations in current placement",
         "params": {"type": "object", "properties": {}, "required": []},
@@ -306,22 +342,24 @@ _TOOLS_SCHEMA = {
 _MODULE_PLACER_SYSTEM_PROMPT = """\
 You are a Module Placer Agent. Your task is to place electronic components within a STRICT area budget.
 
-CRITICAL: You have a maximum bounding box. ALL components must fit within it. \
-The area budget is shown in the task description. Do NOT spread components beyond this area.
+CRITICAL CONSTRAINTS:
+1. ALL components must fit within the area budget.
+2. Electrically connected components MUST be placed close together (check with observe_ratsnest).
 
 Strategy:
-1. Call apply_skill with "force_directed" first — it respects the bbox constraint automatically.
-2. Call observe_module_layout to review the result.
+1. Call apply_skill with "force_directed" — it uses connection weights to pull connected parts together.
+2. Call observe_ratsnest to check connection distances. Any connection > 5mm is too long.
 3. Call observe_violations to check for overlaps.
-4. If there are violations, use move_component to fix (keep within the bbox!).
-5. If the layout is too spread out, call apply_skill with "compact_module".
-6. When all components placed and no critical violations, call finish_placement.
+4. Move components to shorten long connections (move connected parts closer to each other).
+5. If still too spread out, call apply_skill with "compact_module".
+6. When done: all placed, no overlaps, no connections > 5mm → call finish_placement.
 
 Rules:
-- Place ALL components. Don't skip any.
-- Stay WITHIN the area budget. This is the most important constraint.
-- Core IC at center, decoupling caps close to their IC.
-- Minimum 0.3mm spacing between components.
+- Place ALL components.
+- Connected components should be < 3mm apart (critical for signal integrity).
+- Core IC at center, decoupling caps ADJACENT to their IC (< 2mm).
+- Stay within area budget.
+- Minimum 0.3mm spacing.
 """
 
 
@@ -382,6 +420,18 @@ class ModulePlacerAgent(BaseAgent):
                          f"(center at {bbox_constraint.cx:.1f}, {bbox_constraint.cy:.1f}). "
                          f"ALL components must fit within this area!\n")
 
+        # 构建连接关系描述
+        conn_desc = []
+        conns = connections or []
+        for c in conns:
+            conn_desc.append(f"  {c.ref_a} ↔ {c.ref_b} (weight={c.weight})")
+
+        conn_text = ""
+        if conn_desc:
+            conn_text = (f"\nElectrical connections ({len(conns)} nets) — "
+                         f"connected components MUST be placed close together:\n"
+                         + "\n".join(conn_desc[:20]) + "\n")
+
         user_prompt = (
             f"Module: {module.module_name} ({module.module_id})\n"
             f"Type: {module.module_type}\n"
@@ -389,8 +439,9 @@ class ModulePlacerAgent(BaseAgent):
             f"Layout template hint: {module.layout_template_hint or 'none'}\n"
             f"Origin: ({origin[0]:.1f}, {origin[1]:.1f})\n"
             f"{bbox_info}"
-            f"Components ({len(module.components)}):\n" + "\n".join(comp_desc) + "\n\n"
-            f"Please place all components in this module."
+            f"Components ({len(module.components)}):\n" + "\n".join(comp_desc) + "\n"
+            f"{conn_text}\n"
+            f"Place all components. Use observe_ratsnest to check connection lengths after placement."
         )
 
         # 运行 tool-calling 循环
@@ -417,6 +468,8 @@ class ModulePlacerAgent(BaseAgent):
         for name, schema in _TOOLS_SCHEMA.items():
             if name == "observe_module_layout":
                 handler = lambda _state=state: _observe_module_layout(_state)
+            elif name == "observe_ratsnest":
+                handler = lambda _state=state: _observe_ratsnest(_state)
             elif name == "observe_violations":
                 handler = lambda _state=state: _observe_violations(_state)
             elif name == "move_component":
