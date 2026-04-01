@@ -1,7 +1,7 @@
 # NeurPCB 开发任务清单
 
-> 最后更新: 2026-03-28
-> 当前阶段: Phase 0 — 项目初始化
+> 最后更新: 2026-04-01
+> 当前阶段: Phase 0 — KiCad Bridge 层
 
 ---
 
@@ -22,12 +22,12 @@
 
 | # | 任务 | 状态 | 备注 |
 |---|------|------|------|
-| 0.1 | 建立项目目录结构 | ⬚ 待做 | |
-| 0.2 | 实现 KiCadBridge 基础类（连接、读取 footprint 列表） | ⬚ 待做 | |
-| 0.3 | 实现 move/rotate footprint | ⬚ 待做 | |
-| 0.4 | 实现读取板框、网表、焊盘坐标 | ⬚ 待做 | |
-| 0.5 | 实现 checkpoint 管理（begin/push/drop commit） | ⬚ 待做 | |
-| 0.6 | 写集成测试：用测试板跑一遍所有 bridge 功能 | ⬚ 待做 | |
+| 0.1 | 建立项目目录结构 | ✅ 完成 | 目录已存在 |
+| 0.2 | 实现 KiCadBridge 基础类（连接、读取 footprint 列表） | ✅ 完成 | `bridge/kicad_bridge.py` 统一桥接类 |
+| 0.3 | 实现 move/rotate footprint | ✅ 完成 | 支持单个/批量 move、rotate、lock |
+| 0.4 | 实现读取板框、网表、焊盘坐标 | ✅ 完成 | get_board_outline / get_nets / get_pad_positions |
+| 0.5 | 实现 checkpoint 管理（begin/push/drop commit） | ✅ 完成 | begin_commit / push_commit / drop_commit |
+| 0.6 | 写集成测试：用测试板跑一遍所有 bridge 功能 | ✅ 完成 | 22 个离线 mock 测试 + --live 在线测试 |
 
 ### Phase 1: 几何计算层
 > 目标: 纯算法，不碰 KiCad API，不碰 LLM
@@ -107,6 +107,7 @@
 | 日期 | 记录 |
 |------|------|
 | 2026-03-28 | 项目启动，建立任务清单和目录结构 |
+| 2026-04-01 | Phase 0 完成：重写 bridge 层为统一 KiCadBridge 类，替代原有分散的 extractor/executor |
 
 ---
 
@@ -116,4 +117,4 @@
 
 | 日期 | 变更内容 | 原因 |
 |------|---------|------|
-| | | |
+| 2026-04-01 | 废弃 kicad_extractor.py / kicad_executor.py，统一为 KiCadBridge 类 | 架构文档要求"其他模块不直接碰 kipy"，统一入口更好管理连接和事务 |
