@@ -37,6 +37,7 @@ class ModulePlacerState:
     placements: dict[str, Placement]        # ref -> 当前放置
     connections: list[PinPair]              # 内部连接
     origin: tuple[float, float] = (0.0, 0.0)
+    bbox_constraint: Rect | None = None     # 面积预算约束
     finished: bool = False
 
 
@@ -171,7 +172,9 @@ def _apply_skill(state: ModulePlacerState, skill_name: str, params: dict) -> dic
     elif skill_name == "force_directed":
         from skills.module.force_directed import skill_force_directed_place
         comps = [state.components[r] for r in state.module.components if r in state.components]
-        result = skill_force_directed_place(comps, state.connections, origin=(ox, oy), seed=42)
+        result = skill_force_directed_place(
+            comps, state.connections, origin=(ox, oy),
+            bbox_constraint=state.bbox_constraint, seed=42)
 
     elif skill_name == "led_indicator":
         from skills.module.led_indicator import skill_led_indicator
@@ -301,22 +304,24 @@ _TOOLS_SCHEMA = {
 # ---------------------------------------------------------------------------
 
 _MODULE_PLACER_SYSTEM_PROMPT = """\
-You are a Module Placer Agent. Your task is to place electronic components within a module's bounding area.
+You are a Module Placer Agent. Your task is to place electronic components within a STRICT area budget.
+
+CRITICAL: You have a maximum bounding box. ALL components must fit within it. \
+The area budget is shown in the task description. Do NOT spread components beyond this area.
 
 Strategy:
-1. First, check if a layout_template_hint is provided. If so, use apply_skill with the matching skill.
-2. If no hint, use apply_skill with "force_directed" for a general-purpose layout.
-3. After applying a skill, call observe_module_layout to review the result.
-4. Call observe_violations to check for overlaps or spacing issues.
-5. If there are violations, use move_component or swap_components to fix them.
-6. When satisfied (all components placed, no critical violations), call finish_placement.
+1. Call apply_skill with "force_directed" first — it respects the bbox constraint automatically.
+2. Call observe_module_layout to review the result.
+3. Call observe_violations to check for overlaps.
+4. If there are violations, use move_component to fix (keep within the bbox!).
+5. If the layout is too spread out, call apply_skill with "compact_module".
+6. When all components placed and no critical violations, call finish_placement.
 
-Important rules:
-- Place ALL components in the module, don't skip any.
-- The core_component should be at or near the center.
-- Decoupling capacitors should be close to the IC they serve.
-- Avoid overlaps — they are critical violations.
-- Keep the module compact but with adequate spacing (≥0.5mm between components).
+Rules:
+- Place ALL components. Don't skip any.
+- Stay WITHIN the area budget. This is the most important constraint.
+- Core IC at center, decoupling caps close to their IC.
+- Minimum 0.3mm spacing between components.
 """
 
 
@@ -342,11 +347,13 @@ class ModulePlacerAgent(BaseAgent):
         components: dict[str, ComponentInput],
         connections: list[PinPair] | None = None,
         origin: tuple[float, float] = (0.0, 0.0),
+        bbox_constraint: Rect | None = None,
         max_rounds: int = 15,
     ) -> SkillResult:
         """
         为一个模块执行布局。
 
+        bbox_constraint: 最大允许区域（绝对坐标），force_directed 会受此约束
         返回 SkillResult（所有器件的放置坐标 + bbox）。
         """
         state = ModulePlacerState(
@@ -355,6 +362,7 @@ class ModulePlacerAgent(BaseAgent):
             placements={},
             connections=connections or [],
             origin=origin,
+            bbox_constraint=bbox_constraint,
         )
 
         # 注册工具（闭包绑定 state）
@@ -368,12 +376,19 @@ class ModulePlacerAgent(BaseAgent):
             if c:
                 comp_desc.append(f"  {ref}: {c.value} ({c.footprint}, {c.width_mm}x{c.height_mm}mm)")
 
+        bbox_info = ""
+        if bbox_constraint:
+            bbox_info = (f"AREA BUDGET: {bbox_constraint.w:.1f} x {bbox_constraint.h:.1f} mm "
+                         f"(center at {bbox_constraint.cx:.1f}, {bbox_constraint.cy:.1f}). "
+                         f"ALL components must fit within this area!\n")
+
         user_prompt = (
             f"Module: {module.module_name} ({module.module_id})\n"
             f"Type: {module.module_type}\n"
             f"Core component: {module.core_component}\n"
             f"Layout template hint: {module.layout_template_hint or 'none'}\n"
-            f"Origin: ({origin[0]}, {origin[1]})\n"
+            f"Origin: ({origin[0]:.1f}, {origin[1]:.1f})\n"
+            f"{bbox_info}"
             f"Components ({len(module.components)}):\n" + "\n".join(comp_desc) + "\n\n"
             f"Please place all components in this module."
         )
