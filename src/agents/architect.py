@@ -427,9 +427,13 @@ class Architect:
             for ref in m.components:
                 ref_to_module[ref] = m.module_id
 
-        # 从网表构建模块内连接
-        module_conns: dict[str, list[PinPair]] = {}
+        # 从网表构建模块内连接（同一对器件的多个网络 → 权重叠加）
+        # key: (module_id, min(ref_a, ref_b), max(ref_a, ref_b)) → weight
+        pair_weights: dict[tuple[str, str, str], float] = {}
         for net in nets:
+            net_name = net.get("name", "").upper()
+            if net_name in ("GND", ""):
+                continue
             nodes = net.get("nodes", [])
             refs = list({n.split(".")[0] for n in nodes if "." in n})
             for i in range(len(refs)):
@@ -437,8 +441,12 @@ class Architect:
                     mi = ref_to_module.get(refs[i])
                     mj = ref_to_module.get(refs[j])
                     if mi and mj and mi == mj:
-                        conns = module_conns.setdefault(mi, [])
-                        conns.append(PinPair(refs[i], refs[j], 1.0))
+                        key = (mi, min(refs[i], refs[j]), max(refs[i], refs[j]))
+                        pair_weights[key] = pair_weights.get(key, 0) + 1.0
+
+        module_conns: dict[str, list[PinPair]] = {}
+        for (mid, ra, rb), w in pair_weights.items():
+            module_conns.setdefault(mid, []).append(PinPair(ra, rb, w))
 
         return module_conns
 
