@@ -146,7 +146,11 @@ class BoardMap:
     def to_text(self) -> str:
         """生成 ~400 token 的文本地图快照"""
         lines = []
-        lines.append(f"Board: {self.board.w:.1f}×{self.board.h:.1f}mm, {self.copper_layers}-layer")
+        lines.append(f"Board: {self.board.w:.1f}×{self.board.h:.1f}mm, {self.copper_layers}-layer, "
+                      f"origin=({self.board.x:.1f},{self.board.y:.1f}), "
+                      f"end=({self.board.x2:.1f},{self.board.y2:.1f})")
+        lines.append(f"  Valid X range: {self.board.x:.1f} ~ {self.board.x2:.1f}")
+        lines.append(f"  Valid Y range: {self.board.y:.1f} ~ {self.board.y2:.1f}")
 
         if self.anchors:
             anchor_str = ", ".join(f"{a.ref}({a.description}) at ({a.x_mm:.0f},{a.y_mm:.0f})"
@@ -158,7 +162,8 @@ class BoardMap:
             anchor_tag = f"  [anchored: {m.anchored_to}]" if m.anchored_to else ""
             lines.append(
                 f"  {m.module_id} \"{m.name}\" "
-                f"rect({m.rect.x:.0f},{m.rect.y:.0f}, {m.rect.w:.0f}×{m.rect.h:.0f}mm) "
+                f"center=({m.rect.cx:.1f},{m.rect.cy:.1f}) "
+                f"size={m.rect.w:.0f}×{m.rect.h:.0f}mm "
                 f"components={m.component_count}{anchor_tag}"
             )
 

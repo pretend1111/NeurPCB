@@ -189,6 +189,13 @@ def _apply_skill(state: ModulePlacerState, skill_name: str, params: dict) -> dic
             return {"error": "r_top or r_bottom not found"}
         result = skill_voltage_divider(r_top, r_bot, origin=(ox, oy))
 
+    elif skill_name == "compact_module":
+        from skills.module.compact_module import skill_compact_module
+        current = list(state.placements.values())
+        if not current:
+            return {"error": "No components placed yet, nothing to compact"}
+        result = skill_compact_module(current, state.components, target_center=(ox, oy))
+
     else:
         return {"error": f"Unknown skill: {skill_name}"}
 
@@ -276,7 +283,7 @@ _TOOLS_SCHEMA = {
         "params": {
             "type": "object",
             "properties": {
-                "skill_name": {"type": "string", "enum": ["ldo_layout", "crystal_layout", "decap_cluster", "force_directed", "led_indicator", "voltage_divider"]},
+                "skill_name": {"type": "string", "enum": ["ldo_layout", "crystal_layout", "decap_cluster", "force_directed", "led_indicator", "voltage_divider", "compact_module"]},
                 "params": {"type": "object", "description": "Skill-specific parameters"},
             },
             "required": ["skill_name", "params"],

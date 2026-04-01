@@ -519,6 +519,50 @@ class KiCadBridge:
         logger.info("Board saved")
 
     # ===================================================================
+    # 封装尺寸
+    # ===================================================================
+
+    def get_real_footprint_sizes(self) -> dict[str, tuple[float, float, int]]:
+        """
+        从真实焊盘坐标计算每个器件的封装尺寸。
+
+        返回 {ref: (width_mm, height_mm, pin_count)}
+        尺寸 = pad 坐标范围 + margin（考虑 pad 本身占位）
+        """
+        self._ensure_connected()
+        self._refresh_fp_cache()
+        if self._board_pad_cache_dirty:
+            self._refresh_board_pad_cache()
+
+        result = {}
+        PAD_MARGIN = 0.8  # pad 本身尺寸 + courtyard 余量
+
+        for ref, fp in self._fp_cache.items():
+            pads = self._extract_pads(fp)
+            if not pads:
+                result[ref] = (1.5, 0.8, 0)
+                continue
+
+            fp_x = to_mm(fp.position.x)
+            fp_y = to_mm(fp.position.y)
+
+            # 计算 pad 相对于 fp 中心的范围
+            rel_xs = [p.x_mm - fp_x for p in pads]
+            rel_ys = [p.y_mm - fp_y for p in pads]
+
+            if rel_xs and rel_ys:
+                w = max(rel_xs) - min(rel_xs) + PAD_MARGIN
+                h = max(rel_ys) - min(rel_ys) + PAD_MARGIN
+                w = max(w, 1.0)
+                h = max(h, 0.5)
+            else:
+                w, h = 1.5, 0.8
+
+            result[ref] = (round(w, 2), round(h, 2), len(pads))
+
+        return result
+
+    # ===================================================================
     # 高级查询
     # ===================================================================
 
