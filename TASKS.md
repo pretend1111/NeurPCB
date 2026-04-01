@@ -1,7 +1,7 @@
 # NeurPCB 开发任务清单
 
 > 最后更新: 2026-04-01
-> 当前阶段: Phase 1 — 几何计算层
+> 当前阶段: Phase 2 — 布局 Skills
 
 ---
 
@@ -44,13 +44,13 @@
 
 | # | 任务 | 状态 | 备注 |
 |---|------|------|------|
-| 2.1 | skill_decap_cluster（去耦电容排列） | ⬚ 待做 | |
-| 2.2 | skill_ldo_layout（LDO 标准布局） | ⬚ 待做 | |
-| 2.3 | skill_crystal_layout（晶振布局） | ⬚ 待做 | |
-| 2.4 | skill_force_directed_place（力导向通用布局） | ⬚ 待做 | |
-| 2.5 | skill_led_indicator | ⬚ 待做 | |
-| 2.6 | skill_voltage_divider | ⬚ 待做 | |
-| 2.7 | 更多 skill 按需添加... | ⬚ 待做 | |
+| 2.1 | skill_decap_cluster（去耦电容排列） | ✅ 完成 | 支持引脚对准模式和均匀环绕模式 |
+| 2.2 | skill_ldo_layout（LDO 标准布局） | ✅ 完成 | 4 方向信号流 + 反馈电阻 Kelvin 连接 |
+| 2.3 | skill_crystal_layout（晶振布局） | ✅ 完成 | 负载电容对称 + 可配接近角度 |
+| 2.4 | skill_force_directed_place（力导向通用布局） | ✅ 完成 | 弹簧吸引+斥力排斥+模拟退火+bbox约束 |
+| 2.5 | skill_led_indicator | ✅ 完成 | LED+限流电阻串联紧凑排列 |
+| 2.6 | skill_voltage_divider | ✅ 完成 | 分压器对称排列 |
+| 2.7 | 更多 skill 按需添加... | ⬚ 待做 | buck_layout / usb_esd 等后续按需 |
 
 ### Phase 3: Agent 框架 + Analyzer
 > 目标: LLM Tool-Calling 框架 + 第一个 Agent
@@ -109,6 +109,7 @@
 | 2026-03-28 | 项目启动，建立任务清单和目录结构 |
 | 2026-04-01 | Phase 0 完成：重写 bridge 层为统一 KiCadBridge 类，替代原有分散的 extractor/executor |
 | 2026-04-01 | Phase 1 完成：geometry 层 4 个模块（core/ratsnest/congestion/channel），40 个测试全部通过 |
+| 2026-04-01 | Phase 2 完成：6 个 Skills（decap/ldo/crystal/force_directed/led/divider），17 个测试通过 |
 
 ---
 
