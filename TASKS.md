@@ -1,7 +1,7 @@
 # NeurPCB 开发任务清单
 
 > 最后更新: 2026-04-01
-> 当前阶段: Phase 4 — Module Placer
+> 当前阶段: Phase 5 — Global Placer + 地图系统
 
 ---
 
@@ -76,11 +76,11 @@
 ### Phase 5: Global Placer + 地图系统
 | # | 任务 | 状态 | 备注 |
 |---|------|------|------|
-| 5.1 | 模块矩形表示 + 批量移动 | ⬚ 待做 | |
-| 5.2 | 地图系统（状态 → 文本压缩） | ⬚ 待做 | |
-| 5.3 | skill_gp_force_directed | ⬚ 待做 | |
-| 5.4 | skill_gp_resolve_overlap | ⬚ 待做 | |
-| 5.5 | Global Placer Agent | ⬚ 待做 | |
+| 5.1 | 模块矩形表示 + 批量移动 | ✅ 完成 | BoardMap: move/swap/check_overlap/board_fit |
+| 5.2 | 地图系统（状态 → 文本压缩） | ✅ 完成 | to_text() ~400 token 地图快照 |
+| 5.3 | skill_gp_force_directed | ✅ 完成 | 模块级力导向排布（锚点固定+板框约束） |
+| 5.4 | skill_gp_resolve_overlap | ✅ 完成 | 最小位移消解模块重叠 |
+| 5.5 | Global Placer Agent | ✅ 完成 | 10 个工具 tool-calling，DeepSeek 实测 0 重叠 |
 
 ### Phase 6: Router + Critic
 | # | 任务 | 状态 | 备注 |
@@ -112,6 +112,7 @@
 | 2026-04-01 | Phase 2 完成：6 个 Skills（decap/ldo/crystal/force_directed/led/divider），17 个测试通过 |
 | 2026-04-01 | Phase 3 完成：LLM Client + BaseAgent + Louvain 聚类 + Analyzer Agent，ESP32 实测成功 |
 | 2026-04-01 | Phase 4 完成：Module Placer Agent + 7 个 tool-calling 工具，LDO 模块 DeepSeek 实测通过 |
+| 2026-04-01 | Phase 5 完成：BoardMap 地图系统 + GP Skills + Global Placer Agent，ESP32 5 模块排布实测通过 |
 
 ---
 
@@ -122,3 +123,4 @@
 | 日期 | 变更内容 | 原因 |
 |------|---------|------|
 | 2026-04-01 | 废弃 kicad_extractor.py / kicad_executor.py，统一为 KiCadBridge 类 | 架构文档要求"其他模块不直接碰 kipy"，统一入口更好管理连接和事务 |
+| 2026-04-01 | 重命名 skills/global → skills/global_skills | `global` 是 Python 关键字，不能作为 import 路径 |
