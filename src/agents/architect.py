@@ -36,6 +36,41 @@ class PipelineResult:
     success: bool = False
     summary: str = ""
 
+    def get_final_positions(self) -> dict[str, tuple[float, float]]:
+        """
+        计算每个器件的最终绝对坐标。
+
+        Module Placer 输出的坐标以 origin（板框中心）为中心，
+        Global Placer 调整了每个模块矩形的位置。
+        最终坐标 = Module Placer 坐标 + (Global 模块中心 - Module 原始中心) 偏移。
+        """
+        positions = {}
+        if not self.board_map or not self.enriched_netlist:
+            return positions
+
+        for module in self.enriched_netlist.modules:
+            mp_result = self.module_placements.get(module.module_id)
+            gp_module = self.board_map.get_module(module.module_id)
+            if not mp_result or not mp_result.placements or not gp_module:
+                continue
+
+            # Module Placer 输出的几何中心
+            mp_cx = sum(p.x_mm for p in mp_result.placements) / len(mp_result.placements)
+            mp_cy = sum(p.y_mm for p in mp_result.placements) / len(mp_result.placements)
+
+            # Global Placer 给出的模块中心
+            gp_cx = gp_module.rect.cx
+            gp_cy = gp_module.rect.cy
+
+            # 偏移
+            dx = gp_cx - mp_cx
+            dy = gp_cy - mp_cy
+
+            for p in mp_result.placements:
+                positions[p.ref] = (round(p.x_mm + dx, 3), round(p.y_mm + dy, 3))
+
+        return positions
+
 
 class Architect:
     """
@@ -58,6 +93,7 @@ class Architect:
         board_rect: Rect,
         copper_layers: int = 2,
         locked_components: list[dict] | None = None,
+        real_sizes: dict[str, tuple[float, float, int]] | None = None,
         max_iterations: int = 3,
     ) -> PipelineResult:
         """
@@ -89,8 +125,8 @@ class Architect:
         logger.info("Phase 1: Module Placement (%d modules)", len(enriched.modules))
         logger.info("=" * 50)
 
-        # 构建 ComponentInput 映射
-        comp_input_map = self._build_component_inputs(components)
+        # 构建 ComponentInput 映射（优先用真实封装尺寸）
+        comp_input_map = self._build_component_inputs(components, real_sizes)
 
         # 构建模块内连接
         module_connections = self._build_module_connections(enriched, nets)
@@ -110,12 +146,43 @@ class Architect:
             origin = (board_rect.cx, board_rect.cy)
 
             skill_result = placer.place_module(module, module_comps, conns, origin)
+
+            # 自动紧凑化：缩小模块 bbox
+            if skill_result.placements:
+                from skills.module.compact_module import skill_compact_module
+                compacted = skill_compact_module(
+                    skill_result.placements, module_comps, target_center=origin)
+                skill_result = compacted
+
             result.module_placements[module.module_id] = skill_result
             module_bboxes[module.module_id] = skill_result.bbox
 
             logger.info("    → %d/%d placed, bbox %.0fx%.0fmm",
                         len(skill_result.placements), len(module.components),
                         skill_result.bbox.w, skill_result.bbox.h)
+
+        # 处理未被分配到任何模块的器件
+        assigned_refs = {ref for m in enriched.modules for ref in m.components}
+        all_refs = {c.get("ref", "") for c in components} - {""}
+        unassigned = all_refs - assigned_refs
+        if unassigned:
+            logger.warning("  %d unassigned components — placing with force_directed", len(unassigned))
+            from skills.module.force_directed import skill_force_directed_place
+            from agents.analyzer import EnrichedModule
+            orphan_comps = {r: comp_input_map[r] for r in unassigned if r in comp_input_map}
+            orphan_module = EnrichedModule(
+                module_id="M_orphan", module_name="Unassigned",
+                module_type="misc", core_component="",
+                components=sorted(unassigned),
+            )
+            orphan_list = [comp_input_map[r] for r in unassigned if r in comp_input_map]
+            if orphan_list:
+                orphan_result = skill_force_directed_place(
+                    orphan_list, [], origin=(board_rect.cx, board_rect.cy), seed=42)
+                result.module_placements["M_orphan"] = orphan_result
+                module_bboxes["M_orphan"] = orphan_result.bbox
+                enriched.modules.append(orphan_module)
+                logger.info("    → Orphan module: %d placed", len(orphan_result.placements))
 
         # ===== Phase 2: Global Placer =====
         logger.info("=" * 50)
@@ -130,6 +197,24 @@ class Architect:
 
         gp = GlobalPlacerAgent(model=self.model)
         board_map = gp.place_global(board_map)
+
+        # 强制后处理：消解残余重叠 + 推入板框
+        from skills.global_skills.gp_skills import skill_gp_resolve_overlap
+        if board_map.check_overlaps():
+            logger.info("Post-GP: resolving %d remaining overlaps...", len(board_map.check_overlaps()))
+            modules_input = [(m.module_id, m.rect) for m in board_map.modules]
+            resolved = skill_gp_resolve_overlap(modules_input, board_map.board, gap=0.5)
+            for p in resolved:
+                board_map.move_module(p.module_id, p.cx, p.cy)
+
+        # 强制推入板框
+        for m in board_map.modules:
+            clamped_cx = max(board_map.board.x + m.rect.w / 2,
+                             min(m.rect.cx, board_map.board.x2 - m.rect.w / 2))
+            clamped_cy = max(board_map.board.y + m.rect.h / 2,
+                             min(m.rect.cy, board_map.board.y2 - m.rect.h / 2))
+            if clamped_cx != m.rect.cx or clamped_cy != m.rect.cy:
+                board_map.move_module(m.module_id, clamped_cx, clamped_cy)
 
         logger.info("After global placement:\n%s", board_map.to_text())
 
@@ -177,15 +262,24 @@ class Architect:
     # 内部辅助
     # ------------------------------------------------------------------
 
-    def _build_component_inputs(self, components: list[dict]) -> dict[str, ComponentInput]:
-        """从原始器件列表构建 ComponentInput 映射"""
+    def _build_component_inputs(
+        self, components: list[dict],
+        real_sizes: dict[str, tuple[float, float, int]] | None = None,
+    ) -> dict[str, ComponentInput]:
+        """
+        从原始器件列表构建 ComponentInput 映射。
+
+        real_sizes: {ref: (w_mm, h_mm, pin_count)} 从 KiCad 读取的真实封装尺寸
+        """
         result = {}
         for c in components:
             ref = c.get("ref", "")
             if not ref:
                 continue
-            # 根据位号前缀估算封装尺寸
-            w, h, pins = self._estimate_package_size(ref, c.get("value", ""))
+            if real_sizes and ref in real_sizes:
+                w, h, pins = real_sizes[ref]
+            else:
+                w, h, pins = self._estimate_package_size(ref, c.get("value", ""))
             result[ref] = ComponentInput(
                 ref=ref,
                 value=c.get("value", ""),
