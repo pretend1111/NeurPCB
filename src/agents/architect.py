@@ -33,6 +33,7 @@ class PipelineResult:
     board_map: BoardMap | None = None
     router_report: RouterReport | None = None
     critic_report: CriticReport | None = None
+    route_result: object = None  # RouteResult from astar_router
     success: bool = False
     summary: str = ""
 
@@ -131,6 +132,9 @@ class Architect:
         # 构建模块内连接
         module_connections = self._build_module_connections(enriched, nets)
 
+        # 计算每个模块的面积预算
+        area_budgets = self._calc_area_budgets(enriched, comp_input_map, board_rect)
+
         placer = ModulePlacerAgent(model=self.model)
         module_bboxes: dict[str, Rect] = {}
 
@@ -142,12 +146,20 @@ class Architect:
                            for ref in module.components if ref in comp_input_map}
             conns = module_connections.get(module.module_id, [])
 
-            # 模块原点：暂时放在板框中心（Global Placer 后续会调整）
+            # 模块原点：板框中心
             origin = (board_rect.cx, board_rect.cy)
 
-            skill_result = placer.place_module(module, module_comps, conns, origin)
+            # 面积预算 → bbox 约束
+            budget = area_budgets.get(module.module_id, (board_rect.w, board_rect.h))
+            max_w, max_h = budget
+            bbox_constraint = Rect.from_center(origin[0], origin[1], max_w, max_h)
 
-            # 自动紧凑化：缩小模块 bbox
+            skill_result = placer.place_module(
+                module, module_comps, conns, origin,
+                bbox_constraint=bbox_constraint,
+            )
+
+            # 强制紧凑化到预算内
             if skill_result.placements:
                 from skills.module.compact_module import skill_compact_module
                 compacted = skill_compact_module(
@@ -157,9 +169,9 @@ class Architect:
             result.module_placements[module.module_id] = skill_result
             module_bboxes[module.module_id] = skill_result.bbox
 
-            logger.info("    → %d/%d placed, bbox %.0fx%.0fmm",
+            logger.info("    → %d/%d placed, bbox %.0fx%.0fmm (budget %.0fx%.0fmm)",
                         len(skill_result.placements), len(module.components),
-                        skill_result.bbox.w, skill_result.bbox.h)
+                        skill_result.bbox.w, skill_result.bbox.h, max_w, max_h)
 
         # 处理未被分配到任何模块的器件
         assigned_refs = {ref for m in enriched.modules for ref in m.components}
@@ -244,13 +256,62 @@ class Architect:
                 logger.info("Converged: no critical issues, routability >= 0.7")
                 break
 
-            if iteration < max_iterations - 1:
-                logger.info("Issues remain, but skipping auto-fix in current version")
+            # ---- 反馈闭环：自动修复 ----
+            if iteration < max_iterations - 1 and critic_report.critical > 0:
+                logger.info("Auto-fix: %d critical issues detected", critic_report.critical)
+
+                # 修复 1：模块重叠 → 更激进地 compact + re-resolve
+                overlaps = board_map.check_overlaps()
+                if overlaps:
+                    logger.info("  Re-compacting modules to reduce overlaps...")
+                    for mid, sr in result.module_placements.items():
+                        if not sr.placements:
+                            continue
+                        mc = {ref: comp_input_map[ref] for ref in
+                              [p.ref for p in sr.placements] if ref in comp_input_map}
+                        if mc:
+                            from skills.module.compact_module import skill_compact_module
+                            origin = (board_rect.cx, board_rect.cy)
+                            re = skill_compact_module(sr.placements, mc, target_center=origin,
+                                                      scale_factor=0.3)
+                            result.module_placements[mid] = re
+                            board_map.get_module(mid).rect = re.bbox
+
+                    # 重新消解重叠
+                    from skills.global_skills.gp_skills import skill_gp_resolve_overlap
+                    mods = [(m.module_id, m.rect) for m in board_map.modules]
+                    resolved = skill_gp_resolve_overlap(mods, board_map.board, gap=0.5)
+                    for p in resolved:
+                        board_map.move_module(p.module_id, p.cx, p.cy)
+
+                # 修复 2：超出板框 → 强制推回
+                for m in board_map.modules:
+                    cx = max(board_map.board.x + m.rect.w / 2,
+                             min(m.rect.cx, board_map.board.x2 - m.rect.w / 2))
+                    cy = max(board_map.board.y + m.rect.h / 2,
+                             min(m.rect.cy, board_map.board.y2 - m.rect.h / 2))
+                    board_map.move_module(m.module_id, cx, cy)
+
+                logger.info("  After auto-fix:\n%s", board_map.to_text())
 
         # ===== Phase 4: 最终结果 =====
         logger.info("=" * 50)
         logger.info("Phase 4: Final Result")
         logger.info("=" * 50)
+
+        # ===== Phase 3.5: A* 走廊布线 =====
+        logger.info("=" * 50)
+        logger.info("Phase 3.5: A* Corridor Routing")
+        logger.info("=" * 50)
+
+        from routing.astar_router import route_board_map
+        route_result = route_board_map(board_map, grid_size_mm=0.5)
+        result.route_result = route_result
+        logger.info("Routing: %d/%d nets (%.1f%%), total %.1fmm",
+                     route_result.routed_nets, route_result.total_nets,
+                     route_result.completion_rate, route_result.total_length_mm)
+        if route_result.failed_nets:
+            logger.info("  Failed: %s", route_result.failed_nets[:10])
 
         result.success = (result.critic_report.critical == 0)
         result.summary = self._generate_summary(result)
@@ -311,6 +372,48 @@ class Architect:
         if prefix in ("TP",):
             return (1.0, 1.0, 1)
         return (2.0, 2.0, 2)
+
+    @staticmethod
+    def _calc_area_budgets(
+        enriched: EnrichedNetlist,
+        comp_inputs: dict[str, ComponentInput],
+        board_rect: Rect,
+    ) -> dict[str, tuple[float, float]]:
+        """
+        为每个模块分配面积预算 (max_w, max_h)。
+
+        策略：根据模块内器件的实际面积总和（+间距开销）分配。
+        确保所有模块总面积 ≤ 板面积的 85%。
+        """
+        import math
+
+        # 计算每个模块的"紧凑面积"——器件面积之和 × 间距系数
+        SPACING_FACTOR = 2.5  # 间距开销倍率（器件面积 × 此值 ≈ 模块面积）
+        module_areas = {}
+        for module in enriched.modules:
+            comp_area = 0
+            for ref in module.components:
+                ci = comp_inputs.get(ref)
+                if ci:
+                    comp_area += ci.width_mm * ci.height_mm
+            module_areas[module.module_id] = comp_area * SPACING_FACTOR
+
+        total_module_area = sum(module_areas.values()) or 1
+        board_area = board_rect.w * board_rect.h * 0.85  # 留 15% 给走线通道
+
+        # 按面积比例分配
+        budgets = {}
+        for module in enriched.modules:
+            ratio = module_areas[module.module_id] / total_module_area
+            allocated_area = board_area * ratio
+            # 偏向于窄长形（适合窄板）：宽度不超过板宽的 90%
+            max_w = min(board_rect.w * 0.9, math.sqrt(allocated_area * board_rect.w / board_rect.h))
+            max_h = allocated_area / max(max_w, 1)
+            max_w = max(max_w, 5)  # 最小 5mm
+            max_h = max(max_h, 5)
+            budgets[module.module_id] = (round(max_w, 1), round(max_h, 1))
+
+        return budgets
 
     def _build_module_connections(
         self, enriched: EnrichedNetlist, nets: list[dict],
@@ -408,6 +511,13 @@ class Architect:
         if result.critic_report:
             lines.append(f"Critic: {result.critic_report.critical} critical, "
                          f"{result.critic_report.major} major, {result.critic_report.minor} minor")
+
+        if result.route_result:
+            rr = result.route_result
+            lines.append(f"\nRouting: {rr.routed_nets}/{rr.total_nets} nets ({rr.completion_rate}%)")
+            lines.append(f"Total wire length: {rr.total_length_mm}mm")
+            if rr.failed_nets:
+                lines.append(f"Failed nets: {rr.failed_nets[:5]}")
 
         lines.append(f"\nResult: {'SUCCESS' if result.success else 'NEEDS_ATTENTION'}")
         return "\n".join(lines)
