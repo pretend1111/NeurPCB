@@ -1,7 +1,7 @@
 # NeurPCB 开发任务清单
 
 > 最后更新: 2026-04-01
-> 当前阶段: Phase 2 — 布局 Skills
+> 当前阶段: Phase 3 — Agent 框架 + Analyzer
 
 ---
 
@@ -57,11 +57,11 @@
 
 | # | 任务 | 状态 | 备注 |
 |---|------|------|------|
-| 3.1 | LLM Client 封装（支持 Claude / GPT / Gemini） | ⬚ 待做 | |
-| 3.2 | BaseAgent 类（system prompt + tool calling 循环） | ⬚ 待做 | |
-| 3.3 | 网表提取器（从 KiCad 读连接关系） | ⬚ 待做 | |
-| 3.4 | 图聚类模块划分（Louvain） | ⬚ 待做 | |
-| 3.5 | Analyzer Agent（LLM 校正模块划分 + 输出增强网表） | ⬚ 待做 | |
+| 3.1 | LLM Client 封装（DeepSeek, tool-calling） | ✅ 完成 | JSON 模式 + tool-calling 多轮循环，env var 读 key |
+| 3.2 | BaseAgent 类（system prompt + tool calling 循环） | ✅ 完成 | run_json / run_tools 两种模式 |
+| 3.3 | 网表提取器（从 KiCad 读连接关系） | ✅ 完成 | netlist_graph.py networkx 图构建 |
+| 3.4 | 图聚类模块划分（Louvain） | ✅ 完成 | 自动聚类 + 小模块合并 + 孤立节点分配 |
+| 3.5 | Analyzer Agent（LLM 校正模块划分 + 输出增强网表） | ✅ 完成 | ESP32-C3 实测: 55 器件 → 5 模块，DeepSeek 标注角色/连接 |
 
 ### Phase 4: Module Placer
 > 目标: LLM 驱动的模块内布局
@@ -110,6 +110,7 @@
 | 2026-04-01 | Phase 0 完成：重写 bridge 层为统一 KiCadBridge 类，替代原有分散的 extractor/executor |
 | 2026-04-01 | Phase 1 完成：geometry 层 4 个模块（core/ratsnest/congestion/channel），40 个测试全部通过 |
 | 2026-04-01 | Phase 2 完成：6 个 Skills（decap/ldo/crystal/force_directed/led/divider），17 个测试通过 |
+| 2026-04-01 | Phase 3 完成：LLM Client + BaseAgent + Louvain 聚类 + Analyzer Agent，ESP32 实测成功 |
 
 ---
 
