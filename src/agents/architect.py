@@ -260,24 +260,26 @@ class Architect:
             if iteration < max_iterations - 1 and critic_report.critical > 0:
                 logger.info("Auto-fix: %d critical issues detected", critic_report.critical)
 
-                # 修复 1：模块重叠 → 更激进地 compact + re-resolve
+                # 修复 1：模块重叠 → compact（自动找最小无重叠缩放）+ re-resolve
                 overlaps = board_map.check_overlaps()
                 if overlaps:
                     logger.info("  Re-compacting modules to reduce overlaps...")
+                    from skills.module.compact_module import skill_compact_module
                     for mid, sr in result.module_placements.items():
                         if not sr.placements:
                             continue
                         mc = {ref: comp_input_map[ref] for ref in
                               [p.ref for p in sr.placements] if ref in comp_input_map}
                         if mc:
-                            from skills.module.compact_module import skill_compact_module
-                            origin = (board_rect.cx, board_rect.cy)
-                            re = skill_compact_module(sr.placements, mc, target_center=origin,
-                                                      scale_factor=0.3)
-                            result.module_placements[mid] = re
-                            board_map.get_module(mid).rect = re.bbox
+                            gp_mod = board_map.get_module(mid)
+                            target = (gp_mod.rect.cx, gp_mod.rect.cy) if gp_mod else (board_rect.cx, board_rect.cy)
+                            # 自动模式: 让 compact 找最小安全缩放（不传 scale_factor）
+                            compacted = skill_compact_module(sr.placements, mc, target_center=target)
+                            result.module_placements[mid] = compacted
+                            if gp_mod:
+                                gp_mod.rect = compacted.bbox
 
-                    # 重新消解重叠
+                    # 重新消解模块间重叠
                     from skills.global_skills.gp_skills import skill_gp_resolve_overlap
                     mods = [(m.module_id, m.rect) for m in board_map.modules]
                     resolved = skill_gp_resolve_overlap(mods, board_map.board, gap=0.5)

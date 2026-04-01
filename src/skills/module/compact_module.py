@@ -37,13 +37,14 @@ def skill_compact_module(
     tx, ty = target_center if target_center else (cx, cy)
 
     if scale_factor is None:
-        # 自动计算：从 1.0 开始逐步缩小，直到出现重叠
+        # 自动计算：从 1.0 逐步缩小，找到最小的无重叠缩放
         best_scale = 1.0
-        for s in [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]:
+        for s in [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.35]:
             test_placements = _apply_scale(placements, cx, cy, s, tx, ty)
             if not _has_overlap(test_placements, components, min_gap_mm):
-                best_scale = s
-                break
+                best_scale = s  # 这个缩放还没重叠，继续试更小的
+            else:
+                break  # 再小就重叠了，用上一个
         scale_factor = best_scale
 
     result_placements = _apply_scale(placements, cx, cy, scale_factor, tx, ty)
