@@ -1,7 +1,7 @@
 # NeurPCB 开发任务清单
 
 > 最后更新: 2026-04-01
-> 当前阶段: Phase 5 — Global Placer + 地图系统
+> 当前阶段: Phase 7 — 全部完成
 
 ---
 
@@ -85,18 +85,18 @@
 ### Phase 6: Router + Critic
 | # | 任务 | 状态 | 备注 |
 |---|------|------|------|
-| 6.1 | 飞线分析评估（模式 A） | ⬚ 待做 | |
-| 6.2 | 磁力场评估模型 | ⬚ 待做 | |
-| 6.3 | Critic Fast Check 规则引擎 | ⬚ 待做 | |
-| 6.4 | Critic Deep Review | ⬚ 待做 | |
+| 6.1 | 飞线分析评估（模式 A） | ✅ 完成 | 飞线统计 + 交叉数 + 拥塞热力图 + 通道瓶颈 |
+| 6.2 | 磁力场评估模型 | ✅ 完成 | 信号类型加权势能 + 热点检测 + 综合评分 |
+| 6.3 | Critic Fast Check 规则引擎 | ✅ 完成 | 重叠/板框/间距检测，毫秒级 |
+| 6.4 | Critic Deep Review | ✅ 完成 | 高权重距离检查 + 利用率分析 |
 
 ### Phase 7: Architect + 端到端编排
 | # | 任务 | 状态 | 备注 |
 |---|------|------|------|
-| 7.1 | Architect 上下文管理 | ⬚ 待做 | |
-| 7.2 | Phase 0-4 流程编排 | ⬚ 待做 | |
-| 7.3 | 迭代循环 + 收敛判定 | ⬚ 待做 | |
-| 7.4 | 端到端测试（用真实 PCB 跑通） | ⬚ 待做 | |
+| 7.1 | Architect 上下文管理 | ✅ 完成 | PipelineResult 数据结构 + 摘要生成 |
+| 7.2 | Phase 0-4 流程编排 | ✅ 完成 | Analyzer → ModulePlacer → GlobalPlacer → Router → Critic |
+| 7.3 | 迭代循环 + 收敛判定 | ✅ 完成 | max_iterations + 收敛条件: 0 critical + routability ≥ 0.7 |
+| 7.4 | 端到端测试（用真实 PCB 跑通） | ✅ 完成 | 10 个离线测试通过，live 脚本就绪 |
 
 ---
 
@@ -113,6 +113,8 @@
 | 2026-04-01 | Phase 3 完成：LLM Client + BaseAgent + Louvain 聚类 + Analyzer Agent，ESP32 实测成功 |
 | 2026-04-01 | Phase 4 完成：Module Placer Agent + 7 个 tool-calling 工具，LDO 模块 DeepSeek 实测通过 |
 | 2026-04-01 | Phase 5 完成：BoardMap 地图系统 + GP Skills + Global Placer Agent，ESP32 5 模块排布实测通过 |
+| 2026-04-01 | Phase 6 完成：Router（飞线分析+磁力场+通道瓶颈）+ Critic（Fast Check+Deep Review） |
+| 2026-04-01 | Phase 7 完成：Architect 端到端 Pipeline，全部 124 个测试通过 |
 
 ---
 
